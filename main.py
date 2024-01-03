@@ -68,6 +68,9 @@ class O365Account():
         conn = sqlite3.connect('tweets.db')
         cursor = conn.cursor()
 
+
+        cursor.execute("SELECT COUNT(*) FROM files;")
+        skip_count = cursor.fetchone()[0]
        
         # Commit the changes and close the connection
 
@@ -77,20 +80,25 @@ class O365Account():
         for item in all_items:
             if item.is_file:
                 try:
-                    logging.debug(f"{file_count}. {item.name}")
                     file_count += 1
+                    
+                    # save changes to db after a while
+                    if file_count % 1000 == 0:
+                        logging.info(f'saving changes {file_count}')
+                        conn.commit()
+
+                    # skip alread saved files
+                    if file_count < skip_count:
+                        continue
+                    logging.debug(f"{file_count}. {item.name}")
                     #p = f'/mnt/data/o365/tweets/'
                     #item.download(p)
-                     # Use parameterized query to prevent SQL injection
+                    # Use parameterized query to prevent SQL injection
                     cursor.execute('''
-                        INSERT INTO files (name) VALUES (?);
-                        ''', (item.name,))                    
+                          INSERT INTO files (name) VALUES (?);
+                    ''', (item.name,))                    
                 except sqlite3.IntegrityError:
-                    continue
-                
-                if file_count % 1000 == 0:
-                    logging.info(f'saving changes {file_count}')
-                    conn.commit()
+                    pass                
 
         conn.commit()
         conn.close()
