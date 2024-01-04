@@ -129,20 +129,25 @@ class O365Account():
             logging.info(f"{threading.current_thread().name} downloading {filename}")
             self.my_drive.get_item_by_path('/tweets/' + filename).download('/mnt/data/o365/tweets/')
             logging.info(f"{threading.current_thread().name} downloaded {filename}")
+            return (fileinfo['id'], True) # this file was downloaded successfully
         except Exception as e:
             logging.error(f"{threading.current_thread().name} failed to download {filename}")
             logging.error(e)
+        return (fileinfo['id'], False)        
 
     # Function to update download status in the database
-    def update_status(self, files):
+    def update_status(self, info):
+        '''
+        info: list of tuples (id, status)
+        '''
         conn = pymysql.connect(
             **connection
         )
         cursor = conn.cursor()
-        logging.info(f"updating status")
-        for f in files:
-            update_query = "UPDATE files SET downloaded = %s WHERE id = %s;"
-            cursor.execute(update_query, (1, f['id']))
+        for i,s in info:
+            if s:
+                update_query = "UPDATE files SET downloaded = %s WHERE id = %s;"
+                cursor.execute(update_query, (1, i))
         
         # Commit the changes and close the connection
         conn.commit()
@@ -172,25 +177,28 @@ class O365Account():
 
 def main():
     account = O365Account()
-    initial_count = account.files_download()
+    initial_count = account.files_download() - 19014 # subtract tmp files
     c = 0
-    batch_size = 100
+    batch_size = 1000
     t0 = time.time()
-    while True:
-        files = account.fetch_files(batch_size=batch_size)
-        if not files:
-            logging.info("No more files to download. Exiting.")
-            break
-        with ThreadPoolExecutor(max_workers=10) as executor:
+    
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        while True:
+            files = account.fetch_files(batch_size=batch_size)
+            if not files:
+                logging.info("No more files to download. Exiting.")
+                break
+            
             logging.info('running thread pool')
-            executor.map(account.download_file, files)
-        account.update_status(files)
-        c += batch_size
-        t1 = time.time()
-        a = int(c / (t1 - t0))
-        msg = f'downloaded {c+initial_count} files @ {a} files/sec'
-        logging.info(msg)
-        account.ntfy(msg)
+            results = list(executor.map(account.download_file, files))
+            logging.info(f"updating status")
+            account.update_status(results)
+            c += batch_size
+            t1 = time.time()
+            a = int(c / (t1 - t0))
+            msg = f'downloaded {c+initial_count} files @ {a} files/sec'
+            logging.info(msg)
+            account.ntfy(msg)
 
 
 if __name__ == '__main__':
