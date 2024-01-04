@@ -21,6 +21,8 @@ import multiprocessing, threading
 from concurrent.futures import ThreadPoolExecutor
 import time
 import requests
+import functools
+from datetime import datetime 
 
 load_dotenv()
 
@@ -37,6 +39,8 @@ connection = dict(host="localhost",
             user=os.getenv('DB_USER'),
             password=os.getenv('DB_PASS'),
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
+
+onedrive = None
 
 class O365Account():
     def __init__(self, client_id=client_id,
@@ -144,14 +148,12 @@ class O365Account():
             **connection
         )
         cursor = conn.cursor()
-        for i,s in info:
-            if s:
-                update_query = "UPDATE files SET downloaded = %s WHERE id = %s;"
-                cursor.execute(update_query, (1, i))
-        
-        # Commit the changes and close the connection
+        update_query = "UPDATE files SET downloaded = %s, downloaded_on = %s, downloaded_date = %s WHERE id = %s;"
+        u = [(1,t,d,i) for i,s,t,d in info if s]
+        cursor.executemany(update_query, u)
         conn.commit()
         conn.close()
+        return len(u)
 
     def files_download(self):
         conn = pymysql.connect(
@@ -172,14 +174,30 @@ class O365Account():
         try:
             url = os.getenv('NTFY_URL')
             requests.post(url, data=msg)
-        except:
+        except Exception as e:
+            logging.exception(e)
             pass
 
-def main():
+def download_file(fileinfo):
+    filename = fileinfo['name']
+    # get current multiprocessing process
+    process = multiprocessing.current_process()
+    try:
+        logging.info(f"{process} downloading {filename}")
+        onedrive.get_item_by_path('/tweets/' + filename).download('/mnt/data/o365/tweets/')
+        # logging.info(f"{process} downloaded {filename}")
+
+        return (fileinfo['id'], True, datetime.now(), datetime.today()) # this file was downloaded successfully
+    except Exception as e:
+        logging.info(f"{process} failed to download {filename}")
+        logging.error(e)
+    return (fileinfo['id'], False, None, None)     
+
+def main_concurrent():
     account = O365Account()
     initial_count = account.files_download() - 19014 # subtract tmp files
     c = 0
-    batch_size = 1000
+    batch_size = 50
     t0 = time.time()
     
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -201,6 +219,36 @@ def main():
             account.ntfy(msg)
 
 
+def main_multiprocess(batch_size=500):
+    account = O365Account()
+    global onedrive 
+    onedrive = account.get_drive()
+    initial_count = account.files_download() - 19014 # subtract tmp files
+    c = 0
+    t0 = time.time()
+
+    # partial_function = functools.partial(account.download_file)
+
+    with multiprocessing.Pool(processes=4) as pool:  # Set the number of processes as needed
+        while True:
+            files = account.fetch_files(batch_size=batch_size)
+            if not files:
+                logging.info("No more files to download. Exiting.")
+                break
+
+            logging.info('running process pool')
+            results = pool.map(download_file, files)
+            logging.info("updating status")
+            u = account.update_status(results)
+
+            c += u
+            t1 = time.time()
+            a = int(c / (t1 - t0))
+            msg = f'downloaded {c+initial_count} files @ {a} files/sec'
+            account.ntfy(msg)
+            logging.info(msg)
+
 if __name__ == '__main__':
-    main()
+    batch_size = 100
+    main_multiprocess(batch_size=batch_size)
 
