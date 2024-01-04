@@ -148,6 +148,20 @@ class O365Account():
         conn.commit()
         conn.close()
 
+    def files_download(self):
+        conn = pymysql.connect(
+            **connection
+        )
+        cursor = conn.cursor()
+        logging.info(f"counting files downloaded")        
+        q = "select count(*) as count from files where downloaded = 1"
+        cursor.execute(q)
+        c = cursor.fetchone()
+        logging.info(c)
+
+        conn.close()
+        return int(c['count'])
+
     def ntfy(self, msg):
         # send a post request to a url
         try:
@@ -158,11 +172,12 @@ class O365Account():
 
 def main():
     account = O365Account()
+    initial_count = account.files_download()
     c = 0
-    bath_size = 1000
+    batch_size = 100
     t0 = time.time()
     while True:
-        files = account.fetch_files(batch_size=bath_size)
+        files = account.fetch_files(batch_size=batch_size)
         if not files:
             logging.info("No more files to download. Exiting.")
             break
@@ -170,12 +185,12 @@ def main():
             logging.info('running thread pool')
             executor.map(account.download_file, files)
         account.update_status(files)
-        c += bath_size
+        c += batch_size
         t1 = time.time()
         a = int(c / (t1 - t0))
-        msg = f'downloaded {c} files @ {a} files/sec'
+        msg = f'downloaded {c+initial_count} files @ {a} files/sec'
         logging.info(msg)
-        ntfy(msg)
+        account.ntfy(msg)
 
 
 if __name__ == '__main__':
