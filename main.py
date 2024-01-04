@@ -113,7 +113,7 @@ class O365Account():
             **connection
         )
         cursor = conn.cursor()
-
+        logging.info(f"fetching {batch_size} files")
         # Fetch files that have not been downloaded yet
         select_query = "SELECT `id`, `name` FROM `files` WHERE `downloaded`=%s limit %s"
         cursor.execute(select_query, ('0',batch_size))
@@ -125,8 +125,13 @@ class O365Account():
 
     def download_file(self, fileinfo):
         filename = fileinfo['name']
-        self.my_drive.get_item_by_path('/tweets/' + filename).download('/mnt/data/o365/tweets/')
-        logging.info(f"{threading.current_thread().name} downloaded {filename}")
+        try:
+            logging.info(f"{threading.current_thread().name} downloading {filename}")
+            self.my_drive.get_item_by_path('/tweets/' + filename).download('/mnt/data/o365/tweets/')
+            logging.info(f"{threading.current_thread().name} downloaded {filename}")
+        except Exception as e:
+            logging.error(f"{threading.current_thread().name} failed to download {filename}")
+            logging.error(e)
 
     # Function to update download status in the database
     def update_status(self, files):
@@ -134,6 +139,7 @@ class O365Account():
             **connection
         )
         cursor = conn.cursor()
+        logging.info(f"updating status")
         for f in files:
             update_query = "UPDATE files SET downloaded = %s WHERE id = %s;"
             cursor.execute(update_query, (1, f['id']))
@@ -169,6 +175,7 @@ def main():
         a = int(c / (t1 - t0))
         msg = f'downloaded {c} files @ {a} files/sec'
         logging.info(msg)
+        ntfy(msg)
 
 
 if __name__ == '__main__':
