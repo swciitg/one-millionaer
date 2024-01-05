@@ -30,7 +30,7 @@ client_id = os.getenv('CLIENT_ID')  # Your client_id
 client_secret = os.getenv('CLIENT_SECRET')  # Your client_secret, create an (id, secret) at https://apps.dev.microsoft.com
 scopes = ['basic', 'https://graph.microsoft.com/Files.ReadWrite.All']
 CHUNK_SIZE = 1024 * 1024 * 5
-logging.basicConfig(filename='log.txt', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(filename='/var/log/millionaer/log.txt', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
 logging.getLogger().addHandler(console_handler)
@@ -40,6 +40,7 @@ connection = dict(host="localhost",
             password=os.getenv('DB_PASS'),
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
+download_path = '/media/o365/tweets'
 onedrive = None
 
 class O365Account():
@@ -131,13 +132,13 @@ class O365Account():
         filename = fileinfo['name']
         try:
             logging.info(f"{threading.current_thread().name} downloading {filename}")
-            self.my_drive.get_item_by_path('/tweets/' + filename).download('/mnt/data/o365/tweets/')
-            logging.info(f"{threading.current_thread().name} downloaded {filename}")
-            return (fileinfo['id'], True) # this file was downloaded successfully
+            self.my_drive.get_item_by_path('/tweets/' + filename).download(download_path)
+            return (fileinfo['id'], True, datetime.now(), datetime.today()) # this file was downloaded successfully
+
         except Exception as e:
             logging.error(f"{threading.current_thread().name} failed to download {filename}")
             logging.error(e)
-        return (fileinfo['id'], False)        
+        return (fileinfo['id'], False, None, None)        
 
     # Function to update download status in the database
     def update_status(self, info):
@@ -148,8 +149,8 @@ class O365Account():
             **connection
         )
         cursor = conn.cursor()
-        update_query = "UPDATE files SET downloaded = %s, downloaded_on = %s, downloaded_date = %s WHERE id = %s;"
-        u = [(1,t,d,i) for i,s,t,d in info if s]
+        update_query = "UPDATE files SET downloaded = %s, downloaded_on = %s, downloaded_date = %s,download_path=%s WHERE id = %s;"
+        u = [(1,t,d,download_path,i) for i,s,t,d in info if s]
         cursor.executemany(update_query, u)
         conn.commit()
         conn.close()
@@ -184,7 +185,7 @@ def download_file(fileinfo):
     process = multiprocessing.current_process()
     try:
         logging.info(f"{process} downloading {filename}")
-        onedrive.get_item_by_path('/tweets/' + filename).download('/mnt/data/o365/tweets/')
+        onedrive.get_item_by_path('/tweets/' + filename).download(download_path)
         # logging.info(f"{process} downloaded {filename}")
 
         return (fileinfo['id'], True, datetime.now(), datetime.today()) # this file was downloaded successfully
@@ -193,11 +194,10 @@ def download_file(fileinfo):
         logging.error(e)
     return (fileinfo['id'], False, None, None)     
 
-def main_concurrent():
+def main_concurrent(batch_size=500):
     account = O365Account()
     initial_count = account.files_download() - 19014 # subtract tmp files
     c = 0
-    batch_size = 50
     t0 = time.time()
     
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -210,8 +210,8 @@ def main_concurrent():
             logging.info('running thread pool')
             results = list(executor.map(account.download_file, files))
             logging.info(f"updating status")
-            account.update_status(results)
-            c += batch_size
+            u = account.update_status(results)
+            c += u
             t1 = time.time()
             a = int(c / (t1 - t0))
             msg = f'downloaded {c+initial_count} files @ {a} files/sec'
@@ -236,7 +236,7 @@ def main_multiprocess(batch_size=500):
                 logging.info("No more files to download. Exiting.")
                 break
 
-            logging.info('running process pool')
+            logging.info(f'running process pool on {len(files)} files')
             results = pool.map(download_file, files)
             logging.info("updating status")
             u = account.update_status(results)
@@ -249,6 +249,7 @@ def main_multiprocess(batch_size=500):
             logging.info(msg)
 
 if __name__ == '__main__':
-    batch_size = 100
+    batch_size = 160
     main_multiprocess(batch_size=batch_size)
+    #main_concurrent(batch_size=batch_size)
 
