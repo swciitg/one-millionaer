@@ -3,3 +3,6 @@
 o365_token.txt
 tweets.db
 log.txt
+tweets.sql
+Pipfile
+test
