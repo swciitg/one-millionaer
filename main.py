@@ -194,14 +194,14 @@ def download_file(fileinfo):
         logging.error(e)
     return (fileinfo['id'], False, None, None)     
 
-def main_concurrent(batch_size=500):
+def main_concurrent(batch_size=500,threads=10):
     account = O365Account()
     initial_count = account.files_download() - 19014 # subtract tmp files
     c = 0
     t0 = time.time()
     
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        while True:
+    while True:
+        with ThreadPoolExecutor(max_workers=threads) as executor:
             files = account.fetch_files(batch_size=batch_size)
             if not files:
                 logging.info("No more files to download. Exiting.")
@@ -216,10 +216,10 @@ def main_concurrent(batch_size=500):
             a = int(c / (t1 - t0))
             msg = f'downloaded {c+initial_count} files @ {a} files/sec'
             logging.info(msg)
-            account.ntfy(msg)
+            #account.ntfy(msg)
 
 
-def main_multiprocess(batch_size=500):
+def main_multiprocess(batch_size=500,threads=4):
     account = O365Account()
     global onedrive 
     onedrive = account.get_drive()
@@ -229,7 +229,7 @@ def main_multiprocess(batch_size=500):
 
     # partial_function = functools.partial(account.download_file)
 
-    with multiprocessing.Pool(processes=4) as pool:  # Set the number of processes as needed
+    with multiprocessing.Pool(processes=threads) as pool:  # Set the number of processes as needed
         while True:
             files = account.fetch_files(batch_size=batch_size)
             if not files:
@@ -245,11 +245,12 @@ def main_multiprocess(batch_size=500):
             t1 = time.time()
             a = int(c / (t1 - t0))
             msg = f'downloaded {c+initial_count} files @ {a} files/sec'
-            account.ntfy(msg)
+            #account.ntfy(msg)
             logging.info(msg)
 
 if __name__ == '__main__':
-    batch_size = 160
-    main_multiprocess(batch_size=batch_size)
+    batch_size = int(os.getenv('BATCH_SIZE'))
+    threads=int(os.getenv('THREADS'))
+    main_multiprocess(batch_size=batch_size, threads=threads)
     #main_concurrent(batch_size=batch_size)
 
