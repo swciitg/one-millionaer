@@ -23,6 +23,7 @@ import time
 import requests
 import functools
 from datetime import datetime 
+from redis import Redis
 
 load_dotenv()
 
@@ -40,6 +41,7 @@ connection = dict(host="localhost",
             password=os.getenv('DB_PASS'),
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
+rdb = Redis()
 
 def files_download():
     conn = pymysql.connect(
@@ -51,7 +53,7 @@ def files_download():
     cursor.execute(q)
     c = cursor.fetchone()
     conn.close()
-    return int(c['count']) - 19014
+    return int(c['count'])
 
 
 def ntfy(msg):
@@ -66,5 +68,11 @@ def ntfy(msg):
 
 
 if __name__ == '__main__':
-    ntfy(str(files_download()))
+    while True:
+        if not rdb.exists('/millionaer/ping'):
+            ntfy('Stuck!' + str(files_download()))
+            time.sleep(5*60)
+        else:
+            print('all fine')
+        time.sleep(1)
 

@@ -23,6 +23,7 @@ import time
 import requests
 import functools
 from datetime import datetime 
+from redis import Redis
 
 load_dotenv()
 
@@ -42,6 +43,8 @@ connection = dict(host="localhost",
 
 download_path = '/media/o365/tweets'
 onedrive = None
+
+rdb = Redis()
 
 class O365Account():
     def __init__(self, client_id=client_id,
@@ -186,6 +189,7 @@ def download_file(fileinfo):
     try:
         logging.info(f"{process} downloading {filename}")
         onedrive.get_item_by_path('/tweets/' + filename).download(download_path)
+        rdb.set('/millionaer/ping', 1, ex=60)
         # logging.info(f"{process} downloaded {filename}")
 
         return (fileinfo['id'], True, datetime.now(), datetime.today()) # this file was downloaded successfully
@@ -196,7 +200,7 @@ def download_file(fileinfo):
 
 def main_concurrent(batch_size=500,threads=10):
     account = O365Account()
-    initial_count = account.files_download() - 19014 # subtract tmp files
+    initial_count = account.files_download()
     c = 0
     t0 = time.time()
     
@@ -223,7 +227,7 @@ def main_multiprocess(batch_size=500,threads=4):
     account = O365Account()
     global onedrive 
     onedrive = account.get_drive()
-    initial_count = account.files_download() - 19014 # subtract tmp files
+    initial_count = account.files_download()
     c = 0
     t0 = time.time()
 
@@ -247,6 +251,7 @@ def main_multiprocess(batch_size=500,threads=4):
             msg = f'downloaded {c+initial_count} files @ {a} files/sec'
             #account.ntfy(msg)
             logging.info(msg)
+            
 
 if __name__ == '__main__':
     batch_size = int(os.getenv('BATCH_SIZE'))
