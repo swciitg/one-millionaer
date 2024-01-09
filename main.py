@@ -47,8 +47,7 @@ onedrive = None
 rdb = Redis()
 
 class O365Account():
-    def __init__(self, client_id=client_id,
-                 client_secret=client_secret, scopes=scopes):
+    def __init__(self, client_id=client_id,client_secret=client_secret, scopes=scopes):
         self.client_id = client_id
         self.client_secret = client_secret
         self.account = Account(credentials=(client_id, client_secret))
@@ -223,16 +222,15 @@ def main_concurrent(batch_size=500,threads=10):
             #account.ntfy(msg)
 
 
-def main_multiprocess(batch_size=500,threads=4):
+def main_multiprocess(batch_size,threads):
     account = O365Account()
     global onedrive 
     onedrive = account.get_drive()
     initial_count = account.files_download()
     c = 0
     t0 = time.time()
-
+    print(threads)
     # partial_function = functools.partial(account.download_file)
-
     with multiprocessing.Pool(processes=threads) as pool:  # Set the number of processes as needed
         while True:
             files = account.fetch_files(batch_size=batch_size)
@@ -256,6 +254,6 @@ def main_multiprocess(batch_size=500,threads=4):
 if __name__ == '__main__':
     batch_size = int(os.getenv('BATCH_SIZE'))
     threads=int(os.getenv('THREADS'))
-    main_multiprocess(batch_size=batch_size, threads=threads)
+    main_multiprocess(batch_size, threads)
     #main_concurrent(batch_size=batch_size)
 
