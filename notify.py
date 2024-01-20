@@ -24,6 +24,7 @@ import requests
 import functools
 from datetime import datetime 
 from redis import Redis
+import psutil
 
 load_dotenv()
 
@@ -60,19 +61,37 @@ def ntfy(msg):
     # send a post request to a url
     try:
         url = os.getenv('NTFY_URL')
-        requests.post(url, data=msg)
+        requests.post(url, data=msg, headers={'Priority': 'high'})
     except Exception as e:
         logging.exception(e)
         pass
 
 
 
+
+def get_battery_level():
+    try:
+        battery = psutil.sensors_battery()
+        percent = battery.percent
+        return percent
+    except AttributeError:
+        # Handle the case where the 'sensors_battery' attribute is not available
+        return None
+
+
+
+
 if __name__ == '__main__':
     while True:
         if not rdb.exists('/millionaer/ping'):
-            ntfy('Stuck!' + str(files_download()))
+            ntfy(f'Stuck! {files_download()}')
             time.sleep(5*60)
         else:
             print('all fine')
-        time.sleep(1)
+        battery_level = get_battery_level()
+        if battery_level < 10:
+            print(f"Battery Level: {battery_level}%")
+            ntfy(f'Low Battery! {battery_level}')
+
+        time.sleep(5)
 
