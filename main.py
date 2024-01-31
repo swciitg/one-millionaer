@@ -31,9 +31,13 @@ client_id = os.getenv('CLIENT_ID')  # Your client_id
 client_secret = os.getenv('CLIENT_SECRET')  # Your client_secret, create an (id, secret) at https://apps.dev.microsoft.com
 scopes = ['basic', 'https://graph.microsoft.com/Files.ReadWrite.All']
 CHUNK_SIZE = 1024 * 1024 * 5
-logging.basicConfig(filename='/var/log/millionaer/log.txt', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logging_format ='%(asctime)s - %(levelname)s - %(message)s' 
+logging.basicConfig(filename='/var/log/millionaer/downloader.txt', level=logging.INFO, format=logging_format)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.INFO)
+console_formatter = logging.Formatter(logging_format)
+console_handler.setFormatter(console_formatter)
 logging.getLogger().addHandler(console_handler)
 
 connection = dict(host="localhost",
@@ -42,6 +46,7 @@ connection = dict(host="localhost",
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
 download_path = '/media/o365/tweets'
+#download_path = '/mnt/data/o365/tweets'
 onedrive = None
 
 rdb = Redis()
