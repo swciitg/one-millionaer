@@ -89,9 +89,10 @@ if __name__ == '__main__':
         else:
             print('all fine')
         battery_level = get_battery_level()
-        if battery_level < 10:
+        if battery_level < 15:
             print(f"Battery Level: {battery_level}%")
-            ntfy(f'Low Battery! {battery_level}')
+            ntfy(f'Battery! {battery_level}')
+            time.sleep(5*60)
 
         time.sleep(5)
 
