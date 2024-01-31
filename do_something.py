@@ -91,10 +91,10 @@ def extract_tweets():
                     try:
                         tweet = d['includes']['tweets'][0]
                     except Exception as e:
-                        #if d['errors'][0]['parameter'] == 'referenced_tweets.id':
-                        #    tweet = d['data']
-                        #else:
-                        raise 
+                        if d['errors'][0]['parameter'] == 'referenced_tweets.id':
+                            tweet = d['data']
+                        else:
+                            raise 
 
                 else:
                     tweet = d['data']
