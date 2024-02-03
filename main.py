@@ -1,3 +1,4 @@
+#!/mnt/data/projects/million-downloader/.venv/bin/python
 # With this script you can download millions of files from a onedrive folder.
 # This script was copied from https://github.com/O365/python-o365/blame/master/examples/onedrive_example.py
 #
