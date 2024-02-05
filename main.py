@@ -46,8 +46,8 @@ connection = dict(host="localhost",
             password=os.getenv('DB_PASS'),
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
-download_path = '/media/o365/tweets'
-#download_path = '/mnt/data/o365/tweets'
+#download_path = '/media/o365/tweets'
+download_path = '/mnt/data/o365/tweets'
 onedrive = None
 
 rdb = Redis()
@@ -235,7 +235,6 @@ def main_multiprocess(batch_size,threads):
     initial_count = account.files_download()
     c = 0
     t0 = time.time()
-    print(threads)
     # partial_function = functools.partial(account.download_file)
     with multiprocessing.Pool(processes=threads) as pool:  # Set the number of processes as needed
         while True:

@@ -22,7 +22,7 @@ connection = dict(host="localhost",
 logging_format ='%(asctime)s - %(levelname)s - %(message)s' 
 logging.basicConfig(filename='/var/log/millionaer/do_something.txt', level=logging.INFO, format=logging_format)
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.WARNING)
 console_formatter = logging.Formatter(logging_format)
 console_handler.setFormatter(console_formatter)
 logging.getLogger().addHandler(console_handler)
@@ -63,7 +63,7 @@ def get_features(r):
     '''
     Extract required features from dict object after reading the desired json file
     '''
-    logging.info((current_process(), r['name']))
+    logging.debug((current_process(), r['name']))
     features = dict(name=r['name'])
     try:
         d = read_json(os.path.join(r['download_path'], r['name']))
@@ -156,7 +156,7 @@ def remaining_files():
 def files_to_be_processed(batch_size):
     conn = pymysql.connect(**connection)
     cursor = conn.cursor()
-    q = f"select * from files where isnull(lang) and skip=0 and download_path='/mnt/data/o365/tweets' limit {batch_size}"
+    q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
     cursor.execute(q)
     rows = cursor.fetchall()
     conn.close()
@@ -186,12 +186,13 @@ def extract_data_from_files():
                     break
 
                 #features = pool.map(partial(get_features, cursor), rows)
+                logging.info('working on files...')
                 features = pool.map(get_features, rows)
                 u = commit_batch(features)
                 c += u
 
                 avg=int(c/(time()-t0+0.0001))
-                time_left = (files_left / avg)/3600
+                time_left = (files_left / (avg+0.0001))/3600
                 logging.info(f'{files_left-c} files left @ {avg} files/sec Time left: {time_left:.02f} hrs')
 
             except Exception as e:
@@ -199,5 +200,6 @@ def extract_data_from_files():
 
 
 if __name__=="__main__":
-    extract_data_from_files()
+    pass
+    #extract_data_from_files()
     #sync_download_path('/mnt/data/o365/tweets')

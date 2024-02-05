@@ -83,11 +83,11 @@ def get_battery_level():
 
 if __name__ == '__main__':
     while True:
-        if not rdb.exists('/millionaer/ping'):
-            ntfy(f'Stuck! {files_download()}')
-            time.sleep(5*60)
-        else:
-            print('all fine')
+        #if not rdb.exists('/millionaer/ping'):
+        #    ntfy(f'Stuck! {files_download()}')
+        #    time.sleep(5*60)
+        #else:
+        #    print('all fine')
         battery_level = get_battery_level()
         if battery_level < 15:
             print(f"Battery Level: {battery_level}%")
