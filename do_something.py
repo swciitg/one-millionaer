@@ -22,7 +22,7 @@ connection = dict(host="localhost",
 logging_format ='%(asctime)s - %(levelname)s - %(message)s' 
 logging.basicConfig(filename='/var/log/millionaer/do_something.txt', level=logging.INFO, format=logging_format)
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.WARNING)
+console_handler.setLevel(logging.DEBUG)
 console_formatter = logging.Formatter(logging_format)
 console_handler.setFormatter(console_formatter)
 logging.getLogger().addHandler(console_handler)
@@ -123,6 +123,71 @@ def get_features(r):
     return features
 
 
+def unpack_replies_and_quotes(r):
+    '''
+    Extract required features from dict object after reading the desired json file
+    '''
+    logging.debug((current_process(), r['name']))
+    tweets = list()
+    try:
+        d = read_json(os.path.join(r['download_path'], r['name']))
+        for i,tweet in enumerate(d['includes']['tweets']):        
+            features = dict(name=r['name']+str(i))
+            features['tweet_id'] = tweet['id']
+            features['referenced_tweets_type'] = 'unpacked'
+            features['referenced_tweets'] = r['name']
+            features['is_retweet'] = False
+            features['is_reply'] = False
+            features['is_quote'] = False
+            features['lang'] = tweet['lang']
+            features['text'] = re.sub(r'\s+', ' ', tweet['text']) # remove multiple spaces with one
+            timeformat_string = '%Y-%m-%dT%H:%M:%S.%fZ'
+            features['created_at'] = datetime.strptime(tweet['created_at'], timeformat_string)
+            metrics = tweet['public_metrics']
+            features['retweet_count'] = metrics['retweet_count']
+            features['reply_count'] = metrics['reply_count']
+            features['like_count'] = metrics['like_count']
+            features['quote_count'] = metrics['quote_count']
+            features['source'] = tweet.get('source')
+            geo = tweet['geo']
+            features['geo'] = str(geo)
+            features['is_sensitive'] = True if tweet['possibly_sensitive'] == 'true' else False
+            features['reply_settings'] = tweet['reply_settings']
+            features['modified_on']  = datetime.now()
+            features['modified_by'] = 'do_something.unpack_replies_and_quotes'
+            tweets.append(features)
+        
+        return tweets
+    except Exception as e:
+        conn = pymysql.connect(**connection)
+        cursor = conn.cursor()
+        q = f'update files set skip=1 where id={r["id"]}'        
+        cursor.execute(q)                
+        conn.commit()
+        conn.close()
+        return list()
+ 
+
+
+def insert_into_db(data):
+    conn = pymysql.connect(**connection)
+    cursor = conn.cursor()
+
+    for row in data:
+        for tweet in row:
+            k = ', '.join([key for key in tweet.keys()])
+            v = ', '.join(['%s' for v in tweet.values()])
+            q = f"insert into files ({k}) values ({v})"
+            # Executing dynamic update query
+            cursor.execute(q, tuple(tweet.get(c) for c in tweet.keys()))
+            q = f'update files set processed=1 where name=%s'        
+            cursor.execute(q, row[0]['referenced_tweets'])
+
+    conn.commit()
+    conn.close()
+    return len(data)
+
+
 def commit_batch(data):
     conn = pymysql.connect(**connection)
     cursor = conn.cursor()
@@ -133,10 +198,6 @@ def commit_batch(data):
         # Executing dynamic update query
         cursor.execute(q, tuple(row.get(col) for col in row.keys() if col != 'name') + (row['name'],))
 
-    #q = 'UPDATE files SET {}'.format(', '.join('{}=%s'.format(k) for k in d))
-    #query = "UPDATE files SET is_retweet=%s,is_reply=%s,is_quote=%s,referenced_tweets=%s,lang=%s,text=%s,created_at=%s,retweet_count=%s,reply_count=%s,like_count=%s,quote_count=%s,source=%s,geo=%s,is_sensitive=%s,reply_settings=%s,rule=%s,modified_on=%s,modified_by=%s WHERE name = %s;" 
-    #logging.debug(query)
-    #cursor.executemany(query, params)
     conn.commit()
     conn.close()
     return len(data)
@@ -148,15 +209,14 @@ def remaining_files():
     batch_size=int(os.getenv('BATCH_SIZE'))
     t0 = time()
     c = 0
-    cursor.execute("select count(*) as count from files where isnull(lang)")
+    cursor.execute("select count(*) as count from files where processed=0")
     files_left = int(cursor.fetchone()['count'])    
     conn.close()
     return files_left
 
-def files_to_be_processed(batch_size):
+def files_to_be_processed(q):
     conn = pymysql.connect(**connection)
     cursor = conn.cursor()
-    q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
     cursor.execute(q)
     rows = cursor.fetchall()
     conn.close()
@@ -166,7 +226,6 @@ def files_to_be_processed(batch_size):
 
 def extract_data_from_files():
 
-    # todo:extract parent tweet of quoted & replied tweets
     # todo:de-dup replied tweets with their parent tweets if they already exist in db
     # todo:extract user info
  
@@ -180,15 +239,17 @@ def extract_data_from_files():
         while True:
             try:
                 logging.info('fetching files list...')
-                rows = files_to_be_processed(batch_size)
+                #q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
+                q = f"select * from files where processed=0 and (is_reply=1 or is_quote=1) and skip=0 limit {batch_size}"
+                rows = files_to_be_processed(q)
                 if not rows:
                     logging.info('no more files to process')
                     break
 
                 #features = pool.map(partial(get_features, cursor), rows)
                 logging.info('working on files...')
-                features = pool.map(get_features, rows)
-                u = commit_batch(features)
+                features = pool.map(unpack_replies_and_quotes, rows)
+                u = insert_into_db(features)
                 c += u
 
                 avg=int(c/(time()-t0+0.0001))
@@ -197,9 +258,10 @@ def extract_data_from_files():
 
             except Exception as e:
                 logging.exception(e)
+                sleep(60*5)
+                
 
 
 if __name__=="__main__":
-    pass
-    #extract_data_from_files()
+    extract_data_from_files()
     #sync_download_path('/mnt/data/o365/tweets')
