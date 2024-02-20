@@ -11,6 +11,8 @@ from time import time, sleep
 import re
 from functools import partial
 from multiprocessing import Pool, current_process
+from redis import Redis
+
 
 load_dotenv()
 
@@ -259,9 +261,93 @@ def extract_data_from_files():
             except Exception as e:
                 logging.exception(e)
                 sleep(60*5)
-                
 
+
+def get_unique_tweet_ids():
+    threads=int(os.getenv('THREADS'))
+    batch_size=int(os.getenv('BATCH_SIZE'))
+    t0 = time()
+    c = 0
+    files_left = remaining_files()
+
+    with Pool(processes=threads) as pool:
+        while True:
+            try:
+                logging.info('fetching files list...')
+                #q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
+                q = f"select * from files where processed=0 and skip=0 limit {batch_size}"
+                rows = files_to_be_processed(q)
+                if not rows:
+                    logging.info('no more files to process')
+                    break
+
+                #features = pool.map(partial(get_features, cursor), rows)
+                logging.info('working on files...')
+                data = pool.map(insert_into_redis, rows)
+
+
+                conn = pymysql.connect(**connection)
+                cursor = conn.cursor()
+
+                for row in data:
+                    q = f'update files set processed=1 where id=%s'        
+                    cursor.execute(q, row['id'])
+
+                conn.commit()
+                conn.close()
+
+                u = len(data)
+                c += u
+
+                avg=int(c/(time()-t0+0.0001))
+                time_left = (files_left / (avg+0.0001))/3600
+                logging.info(f'{files_left-c} files left @ {avg} files/sec Time left: {time_left:.02f} hrs')
+
+            except Exception as e:
+                logging.exception(e)
+                sleep(60*5)
+
+def insert_into_redis(r):
+    rd.sadd(f'/tweet/id/{r["tweet_id"]}', r['id'])
+    return r
+   
+def get_tweet_by_id(tweet_id):
+    q = 'select * from files where id=%s'
+    conn = pymysql.connect(**connection)
+    cursor = conn.cursor()
+    cursor.execute(q, tweet_id)
+    rows = cursor.fetchone()
+    conn.close()
+    return rows
+
+def insert_tweet_into_new_table(tweet):
+    conn = pymysql.connect(**connection)
+    cursor = conn.cursor()
+    columns = ', '.join([key for key in tweet.keys()])
+    values = ', '.join(['%s' for v in tweet.values()])
+    q = f"insert into tweets ({columns}) values ({values})"    
+    cursor.execute(q, tuple(tweet.values()))
+    conn.commit()
+    conn.close()
+
+def dedup_tweets():
+    # create a table with same schema which will not have the duplicates
+    # get a list of unique tweets
+    # save them in a cache or something
+    # iterate over those list and get all rows matching that tweet id and pick one and insert it into new table
+    # duplicates removed
+    rd = Redis(decode_responses=True)
+    keys = rd.keys('/tweet/id/*')
+    for k in keys:
+        tweet = get_tweet_by_id(list(rd.smembers(k))[0])
+        insert_tweet_into_new_table(tweet)
+    rd.close()
+   
+    
 
 if __name__=="__main__":
-    extract_data_from_files()
+    #get_unique_tweet_ids()
+
+    dedup_tweets()
+    #extract_data_from_files()
     #sync_download_path('/mnt/data/o365/tweets')
