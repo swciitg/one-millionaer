@@ -14,6 +14,12 @@ from multiprocessing import Pool, current_process
 from redis import Redis
 
 
+from tidyX import TextPreprocessor as tp
+from lingua import Language, LanguageDetectorBuilder
+
+languages = [Language.ENGLISH, Language.URDU]
+detector = LanguageDetectorBuilder.from_languages(*languages).build()
+
 load_dotenv()
 
 connection = dict(host="localhost",
@@ -195,10 +201,10 @@ def commit_batch(data):
     cursor = conn.cursor()
 
     for row in data:
-        columns = ', '.join([f"{key}=%s" for key in row.keys() if key != 'name'])
-        q = f"UPDATE files SET {columns} WHERE name=%s"
+        columns = ', '.join([f"{key}=%s" for key in row.keys() if key != 'id'])
+        q = f"UPDATE tweets SET {columns} WHERE id=%s"
         # Executing dynamic update query
-        cursor.execute(q, tuple(row.get(col) for col in row.keys() if col != 'name') + (row['name'],))
+        cursor.execute(q, tuple(row.get(col) for col in row.keys() if col != 'id') + (row['id'],))
 
     conn.commit()
     conn.close()
@@ -207,11 +213,7 @@ def commit_batch(data):
 def remaining_files():
     conn = pymysql.connect(**connection)
     cursor = conn.cursor()
-    threads=int(os.getenv('THREADS'))
-    batch_size=int(os.getenv('BATCH_SIZE'))
-    t0 = time()
-    c = 0
-    cursor.execute("select count(*) as count from files where processed=0")
+    cursor.execute("select count(*) as count from tweets where processed=0")
     files_left = int(cursor.fetchone()['count'])    
     conn.close()
     return files_left
@@ -226,9 +228,8 @@ def files_to_be_processed(q):
 
 
 
-def extract_data_from_files():
+def extract_data_from_tweets(some_task):
 
-    # todo:de-dup replied tweets with their parent tweets if they already exist in db
     # todo:extract user info
  
     threads=int(os.getenv('THREADS'))
@@ -242,7 +243,7 @@ def extract_data_from_files():
             try:
                 logging.info('fetching files list...')
                 #q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
-                q = f"select * from files where processed=0 and (is_reply=1 or is_quote=1) and skip=0 limit {batch_size}"
+                q = f"select * from tweets where processed=0 and skip=0 limit {batch_size}"
                 rows = files_to_be_processed(q)
                 if not rows:
                     logging.info('no more files to process')
@@ -250,8 +251,9 @@ def extract_data_from_files():
 
                 #features = pool.map(partial(get_features, cursor), rows)
                 logging.info('working on files...')
-                features = pool.map(unpack_replies_and_quotes, rows)
-                u = insert_into_db(features)
+                features = pool.map(some_task, rows)
+                #u = insert_into_db(features)
+                u = commit_batch(features)                                
                 c += u
 
                 avg=int(c/(time()-t0+0.0001))
@@ -263,7 +265,7 @@ def extract_data_from_files():
                 sleep(60*5)
 
 
-def get_unique_tweet_ids():
+def iterate_over_tweets_and_do(some_task):
     threads=int(os.getenv('THREADS'))
     batch_size=int(os.getenv('BATCH_SIZE'))
     t0 = time()
@@ -283,7 +285,7 @@ def get_unique_tweet_ids():
 
                 #features = pool.map(partial(get_features, cursor), rows)
                 logging.info('working on files...')
-                data = pool.map(insert_into_redis, rows)
+                data = pool.map(some_task, rows)
 
 
                 conn = pymysql.connect(**connection)
@@ -306,6 +308,19 @@ def get_unique_tweet_ids():
             except Exception as e:
                 logging.exception(e)
                 sleep(60*5)
+
+def infer_lang(r):
+    '''
+    a function to infer language from the text using https://github.com/pemistahl/lingua-py
+    '''
+    tweet = dict(id=r['id'])
+    text = tp.preprocess(r['text'])
+    tweet['cleaned_text'] = text
+    tweet['cleaned_text_len'] = len(text)
+    tweet['lang_confidence']=detector.compute_language_confidence(tweet['cleaned_text'], Language.ENGLISH)
+    tweet['processed'] = 1
+    return tweet
+
 
 def insert_into_redis(r):
     rd.sadd(f'/tweet/id/{r["tweet_id"]}', r['id'])
@@ -348,6 +363,7 @@ def dedup_tweets():
 if __name__=="__main__":
     #get_unique_tweet_ids()
 
-    dedup_tweets()
-    #extract_data_from_files()
+    #iterate_over_tweets_and_do(infer_lang)
+    #dedup_tweets()
+    extract_data_from_tweets(infer_lang)
     #sync_download_path('/mnt/data/o365/tweets')
