@@ -16,6 +16,8 @@ from redis import Redis
 
 from tidyX import TextPreprocessor as tp
 from lingua import Language, LanguageDetectorBuilder
+import pycld2 as cld2
+
 
 languages = [Language.ENGLISH, Language.URDU]
 detector = LanguageDetectorBuilder.from_languages(*languages).build()
@@ -35,6 +37,8 @@ console_formatter = logging.Formatter(logging_format)
 console_handler.setFormatter(console_formatter)
 logging.getLogger().addHandler(console_handler)
 
+
+#rd = Redis(decode_responses=True)
 
 def sync_download_path(path):
     conn = pymysql.connect(**connection)
@@ -277,7 +281,7 @@ def iterate_over_tweets_and_do(some_task):
             try:
                 logging.info('fetching files list...')
                 #q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
-                q = f"select * from files where processed=0 and skip=0 limit {batch_size}"
+                q = f"select * from tweets where processed=0 and skip=0 limit {batch_size}"
                 rows = files_to_be_processed(q)
                 if not rows:
                     logging.info('no more files to process')
@@ -292,7 +296,7 @@ def iterate_over_tweets_and_do(some_task):
                 cursor = conn.cursor()
 
                 for row in data:
-                    q = f'update files set processed=1 where id=%s'        
+                    q = f'update tweets set processed=1 where id=%s'        
                     cursor.execute(q, row['id'])
 
                 conn.commit()
@@ -313,21 +317,62 @@ def infer_lang(r):
     '''
     a function to infer language from the text using https://github.com/pemistahl/lingua-py
     '''
+    from simplemma import in_target_language
+    import hashlib
     tweet = dict(id=r['id'])
-    text = tp.preprocess(r['text'])
-    tweet['cleaned_text'] = text
-    tweet['cleaned_text_len'] = len(text)
-    tweet['lang_confidence']=detector.compute_language_confidence(tweet['cleaned_text'], Language.ENGLISH)
-    tweet['processed'] = 1
+    try:
+        tweet['processed'] = 1
+        text = tp.preprocess(r['text'], delete_emojis=False) # remove urdu chars, numbers, hastags, special chars
+        text = tp.preprocess(text) # remove emojis
+        tweet['cleaned_text'] = text
+        tweet['cleaned_text_len'] = len(text)
+        tweet['confidence_lingua_py']=detector.compute_language_confidence(text, Language.ENGLISH)
+        tweet['cleaned_text_hash']=hashlib.sha256(text.encode('utf-8')).hexdigest()
+        tweet['simplemma_ratio'] = in_target_language(text, lang='en')
+    except Exception as e:
+        logging.info(r) 
+        logging.exception(e) 
     return tweet
 
 
+def infer_lang_cld2(r):
+    '''
+    a function to infer language from the text using https://pypi.org/project/pycld2/
+    '''
+    tweet = dict(id=r['id'])
+    try:
+        tweet['processed'] = 1
+        reliable, _, details = cld2.detect(r['cleaned_text'])
+        if reliable and details[0][1]=='en':            
+            tweet['cld2_percent']=details[0][2]
+            tweet['cld2_score']=details[0][3]
+    except Exception as e:
+        tweet['skip'] = 1
+        logging.info(r) 
+        logging.exception(e) 
+    return tweet
+
+def simplemma_ratio(r):
+    '''
+    a function to get ratio of english words in text https://github.com/adbar/simplemma
+    '''
+    from simplemma import in_target_language
+    tweet = dict(id=r['id'])
+    try:
+        tweet['processed'] = 1
+        tweet['simplemma_ratio'] = in_target_language(r['cleaned_text'], lang='en')
+    except Exception as e:
+        tweet['skip'] = 1
+        logging.info(r) 
+        logging.exception(e) 
+    return tweet
+
 def insert_into_redis(r):
-    rd.sadd(f'/tweet/id/{r["tweet_id"]}', r['id'])
+    rd.sadd(f'/english/tweet/hash/{r["cleaned_text_hash"]}', r['id'])
     return r
    
 def get_tweet_by_id(tweet_id):
-    q = 'select * from files where id=%s'
+    q = 'select * from tweets where id=%s'
     conn = pymysql.connect(**connection)
     cursor = conn.cursor()
     cursor.execute(q, tweet_id)
@@ -340,7 +385,7 @@ def insert_tweet_into_new_table(tweet):
     cursor = conn.cursor()
     columns = ', '.join([key for key in tweet.keys()])
     values = ', '.join(['%s' for v in tweet.values()])
-    q = f"insert into tweets ({columns}) values ({values})"    
+    q = f"insert into english_tweets ({columns}) values ({values})"    
     cursor.execute(q, tuple(tweet.values()))
     conn.commit()
     conn.close()
@@ -352,7 +397,7 @@ def dedup_tweets():
     # iterate over those list and get all rows matching that tweet id and pick one and insert it into new table
     # duplicates removed
     rd = Redis(decode_responses=True)
-    keys = rd.keys('/tweet/id/*')
+    keys = rd.keys('/english/tweet/hash/*')
     for k in keys:
         tweet = get_tweet_by_id(list(rd.smembers(k))[0])
         insert_tweet_into_new_table(tweet)
@@ -363,7 +408,9 @@ def dedup_tweets():
 if __name__=="__main__":
     #get_unique_tweet_ids()
 
-    #iterate_over_tweets_and_do(infer_lang)
-    #dedup_tweets()
-    extract_data_from_tweets(infer_lang)
+    #iterate_over_tweets_and_do(insert_into_redis)
+    dedup_tweets()
+    #extract_data_from_tweets(infer_lang)
+    #logging.info(('hi'))
     #sync_download_path('/mnt/data/o365/tweets')
+    #rd.close()

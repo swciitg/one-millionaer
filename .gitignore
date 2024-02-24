@@ -6,3 +6,4 @@ log.txt
 tweets.sql
 Pipfile
 test
+data_preprocessing/stats.txt
