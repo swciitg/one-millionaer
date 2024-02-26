@@ -92,7 +92,7 @@ if __name__ == '__main__':
         if battery_level < 15:
             print(f"Battery Level: {battery_level}%")
             ntfy(f'Battery! {battery_level}')
-            time.sleep(5*60)
+            time.sleep(3*60)
 
         time.sleep(5)
 

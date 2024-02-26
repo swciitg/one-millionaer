@@ -12,7 +12,7 @@ import re
 from functools import partial
 from multiprocessing import Pool, current_process
 from redis import Redis
-
+import shutil
 
 from tidyX import TextPreprocessor as tp
 from lingua import Language, LanguageDetectorBuilder
@@ -206,7 +206,7 @@ def commit_batch(data):
 
     for row in data:
         columns = ', '.join([f"{key}=%s" for key in row.keys() if key != 'id'])
-        q = f"UPDATE tweets SET {columns} WHERE id=%s"
+        q = f"UPDATE english_tweets SET {columns} WHERE id=%s"
         # Executing dynamic update query
         cursor.execute(q, tuple(row.get(col) for col in row.keys() if col != 'id') + (row['id'],))
 
@@ -217,7 +217,7 @@ def commit_batch(data):
 def remaining_files():
     conn = pymysql.connect(**connection)
     cursor = conn.cursor()
-    cursor.execute("select count(*) as count from tweets where processed=0")
+    cursor.execute("select count(*) as count from english_tweets where processed=0")
     files_left = int(cursor.fetchone()['count'])    
     conn.close()
     return files_left
@@ -281,7 +281,7 @@ def iterate_over_tweets_and_do(some_task):
             try:
                 logging.info('fetching files list...')
                 #q = f"select * from files where isnull(lang) and skip=0 limit {batch_size}"
-                q = f"select * from tweets where processed=0 and skip=0 limit {batch_size}"
+                q = f"select * from english_tweets where processed=0 and skip=0 limit {batch_size}"
                 rows = files_to_be_processed(q)
                 if not rows:
                     logging.info('no more files to process')
@@ -290,21 +290,8 @@ def iterate_over_tweets_and_do(some_task):
                 #features = pool.map(partial(get_features, cursor), rows)
                 logging.info('working on files...')
                 data = pool.map(some_task, rows)
-
-
-                conn = pymysql.connect(**connection)
-                cursor = conn.cursor()
-
-                for row in data:
-                    q = f'update tweets set processed=1 where id=%s'        
-                    cursor.execute(q, row['id'])
-
-                conn.commit()
-                conn.close()
-
-                u = len(data)
+                u = commit_batch(data)                                
                 c += u
-
                 avg=int(c/(time()-t0+0.0001))
                 time_left = (files_left / (avg+0.0001))/3600
                 logging.info(f'{files_left-c} files left @ {avg} files/sec Time left: {time_left:.02f} hrs')
@@ -403,13 +390,21 @@ def dedup_tweets():
         insert_tweet_into_new_table(tweet)
     rd.close()
    
-    
+def copy_english_tweets_to_dir(r):
+    '''
+    Copy english tweets to a separate dir from original 5M tweets dir
+    '''
+    name = r['name'] if r['name'].endswith('json') else r['referenced_tweets']
+    path = r['download_path'] if r['download_path'] else '/mnt/data/o365/tweets'
+    shutil.copy(os.path.join(path, name), '/mnt/data/o365/english_tweets')
+        
+    return dict(id=r['id'], processed=1)
 
 if __name__=="__main__":
     #get_unique_tweet_ids()
 
-    #iterate_over_tweets_and_do(insert_into_redis)
-    dedup_tweets()
+    iterate_over_tweets_and_do(copy_english_tweets_to_dir)
+    #dedup_tweets()
     #extract_data_from_tweets(infer_lang)
     #logging.info(('hi'))
     #sync_download_path('/mnt/data/o365/tweets')
