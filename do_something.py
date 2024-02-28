@@ -30,9 +30,9 @@ connection = dict(host="localhost",
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
 logging_format ='%(asctime)s - %(levelname)s - %(message)s' 
-logging.basicConfig(filename='/var/log/millionaer/do_something.txt', level=logging.DEBUG, format=logging_format)
+logging.basicConfig(filename='/var/log/millionaer/do_something.txt', level=logging.INFO, format=logging_format)
 console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.DEBUG)
+console_handler.setLevel(logging.INFO)
 console_formatter = logging.Formatter(logging_format)
 console_handler.setFormatter(console_formatter)
 logging.getLogger().addHandler(console_handler)

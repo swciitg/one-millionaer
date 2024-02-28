@@ -92,7 +92,7 @@ def custom_data_preprocess(x):
 
 def predict_tweet_sentiment(x):
   vec = custom_data_preprocess(x)
-  result = model.predict(vec)
+  result = model.predict(vec, verbose=0)
   return result.flatten()[0]
 
 # tweet_id 155: ecnmc pwr
