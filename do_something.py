@@ -400,10 +400,18 @@ def copy_english_tweets_to_dir(r):
         
     return dict(id=r['id'], processed=1)
 
+
+from model import predict_tweet_sentiment
+def predict_sentiment(r):
+    d = dict(id=r['id'], processed=1)
+    d['sentiment'] = predict_tweet_sentiment(r['cleaned_text'])
+    return d
+
+
 if __name__=="__main__":
     #get_unique_tweet_ids()
 
-    iterate_over_tweets_and_do(copy_english_tweets_to_dir)
+    iterate_over_tweets_and_do(predict_sentiment)
     #dedup_tweets()
     #extract_data_from_tweets(infer_lang)
     #logging.info(('hi'))
