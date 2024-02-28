@@ -95,7 +95,6 @@ def predict_tweet_sentiment(x):
   result = model.predict(vec)
   return result.flatten()[0]
 
-'''
 # tweet_id 155: ecnmc pwr
 app = FastAPI()
 
@@ -107,4 +106,3 @@ def index():
 def predict(text):
     return {'probability' : str(predict_tweet_sentiment(text))}
 
-'''

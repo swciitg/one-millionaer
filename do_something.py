@@ -30,7 +30,7 @@ connection = dict(host="localhost",
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
 logging_format ='%(asctime)s - %(levelname)s - %(message)s' 
-logging.basicConfig(filename='/var/log/millionaer/do_something.txt', level=logging.INFO, format=logging_format)
+logging.basicConfig(filename='/var/log/millionaer/do_something.txt', level=logging.DEBUG, format=logging_format)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)
 console_formatter = logging.Formatter(logging_format)
@@ -400,11 +400,10 @@ def copy_english_tweets_to_dir(r):
         
     return dict(id=r['id'], processed=1)
 
-
-from model import predict_tweet_sentiment
+import requests
 def predict_sentiment(r):
     d = dict(id=r['id'], processed=1)
-    d['sentiment'] = predict_tweet_sentiment(r['cleaned_text'])
+    d['sentiment'] = eval(requests.get(f'http://localhost:8000/predict?text={r["cleaned_text"]}').text)['probability']
     return d
 
 
