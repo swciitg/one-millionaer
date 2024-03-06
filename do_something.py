@@ -403,7 +403,10 @@ def copy_english_tweets_to_dir(r):
 import requests
 def predict_sentiment(r):
     d = dict(id=r['id'], processed=1)
-    d['sentiment'] = eval(requests.get(f'http://localhost:8000/predict?text={r["cleaned_text"]}').text)['probability']
+    try:
+        d['sentiment'] = eval(requests.get(f'http://localhost:8000/predict?text={r["cleaned_text"]}').text)['probability']
+    except Exception as e:
+        logging.exception(e)        
     return d
 
 
