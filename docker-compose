@@ -1,0 +1,17 @@
+version: '3'
+services:
+  downloader:
+    build: .
+    environment:
+      CLIENT_ID: <your_client_id>
+      CLIENT_SECRET: <your_client_secret>
+      DB_USER: <your_db_user>
+      DB_PASS: <your_db_password>
+      DB_NAME: <your_db_name>
+      BATCH_SIZE: <batch_size_value>
+      THREADS: <threads_value>
+      download_path : <threads_value>
+
+    volumes:
+      - /var/log/millionaer:/var/log/millionaer
+      # Add any other volumes as needed

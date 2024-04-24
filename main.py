@@ -47,7 +47,7 @@ connection = dict(host="localhost",
             database=os.getenv('DB_NAME'), cursorclass=pymysql.cursors.DictCursor)
 
 #download_path = '/media/o365/tweets'
-download_path = '/mnt/data/o365/tweets'
+download_path = os.getenv('download_path')
 onedrive = None
 
 rdb = Redis()
